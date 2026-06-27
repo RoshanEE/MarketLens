@@ -10,7 +10,6 @@ This module is the single entry point called by the research route.
 """
 
 import json
-import asyncio
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 from uuid import UUID
@@ -20,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.models.research_run import ResearchRun, SourceUrl, Report
+from app.models.research_run import ResearchRun, Report
 from app.services.crawler import crawl_urls, CrawlResult
 from app.services.ai_pipeline import analyze_content
 from app.services.judge import run_hallucination_check

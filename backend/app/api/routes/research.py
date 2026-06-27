@@ -8,13 +8,12 @@ GET  /runs/{id}/stream — SSE stream for live pipeline progress
 DELETE /runs/{id}   — delete a run
 """
 
-import asyncio
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.deps import get_current_user
