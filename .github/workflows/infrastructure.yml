@@ -30,6 +30,27 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Clean up stuck stack
+        run: |
+          STACK_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name marketlens \
+            --query "Stacks[0].StackStatus" \
+            --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+
+          echo "Stack status: $STACK_STATUS"
+
+          if [[ "$STACK_STATUS" == "ROLLBACK_FAILED" || \
+                "$STACK_STATUS" == "CREATE_FAILED" || \
+                "$STACK_STATUS" == "DELETE_FAILED" || \
+                "$STACK_STATUS" == "ROLLBACK_COMPLETE" ]]; then
+            echo "Stack is in unrecoverable state ($STACK_STATUS). Deleting before redeploy..."
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            aws s3 rm s3://marketlens-frontend-$ACCOUNT_ID --recursive 2>/dev/null || true
+            aws cloudformation delete-stack --stack-name marketlens
+            aws cloudformation wait stack-delete-complete --stack-name marketlens
+            echo "Stack deleted. Proceeding with fresh deploy."
+          fi
+
       - name: Deploy stack
         run: |
           aws cloudformation deploy \
