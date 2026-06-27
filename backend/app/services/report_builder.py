@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.models.research_run import ResearchRun, Report
+from app.models.research_run import ResearchRun, Report, SourceUrl
 from app.services.crawler import crawl_urls, CrawlResult
 from app.services.ai_pipeline import analyze_content
 from app.services.judge import run_hallucination_check
@@ -48,19 +48,28 @@ def _detect_changes(current_hashes: dict[str, str], previous_hashes: dict[str, s
 
 async def _get_previous_hashes(db: AsyncSession, user_id: UUID, urls: list[str]) -> dict[str, str]:
     """
-    Find the most recent previous run for this user and retrieve its content hashes.
-    Used for change detection.
+    For each URL, find the most recent successful crawl hash across all previous
+    completed runs by this user. This ensures change detection works correctly even
+    when the user's last run used different URLs.
     """
     result = await db.execute(
-        select(ResearchRun)
-        .where(ResearchRun.user_id == user_id, ResearchRun.status == "complete")
-        .order_by(ResearchRun.completed_at.desc())
-        .limit(1)
+        select(SourceUrl.url, SourceUrl.content_hash)
+        .join(ResearchRun, SourceUrl.run_id == ResearchRun.id)
+        .where(
+            ResearchRun.user_id == user_id,
+            ResearchRun.status == "complete",
+            SourceUrl.url.in_(urls),
+            SourceUrl.content_hash.isnot(None),
+            SourceUrl.crawl_status == "success",
+        )
+        .order_by(SourceUrl.crawled_at.desc())
     )
-    prev_run = result.scalar_one_or_none()
-    if prev_run and prev_run.content_hashes:
-        return {url: prev_run.content_hashes.get(url, "") for url in urls}
-    return {}
+    # Rows come back most-recent-first; take the first hash seen for each URL.
+    url_hashes: dict[str, str] = {}
+    for row in result.all():
+        if row.url not in url_hashes:
+            url_hashes[row.url] = row.content_hash
+    return url_hashes
 
 
 async def run_research_pipeline(

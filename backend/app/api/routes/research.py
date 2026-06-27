@@ -8,6 +8,7 @@ GET  /runs/{id}/stream — SSE stream for live pipeline progress
 DELETE /runs/{id}   — delete a run
 """
 
+import json
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -23,6 +24,7 @@ from app.schemas.research import (
     ResearchRunCreate,
     ResearchRunOut,
     ResearchRunSummary,
+    ResearchRunUpdate,
 )
 from app.services.report_builder import run_research_pipeline
 
@@ -114,6 +116,13 @@ async def get_run(
     return run
 
 
+_SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+
+
+def _sse(event: str, message: str, detail: dict | None = None) -> str:
+    return f"data: {json.dumps({'event': event, 'message': message, 'detail': detail})}\n\n"
+
+
 @router.get("/{run_id}/stream")
 async def stream_run(
     run_id: UUID,
@@ -122,10 +131,32 @@ async def stream_run(
 ):
     """
     SSE endpoint — starts the research pipeline and streams progress events.
-    The client should connect immediately after creating a run.
+    Only starts the pipeline when the run is in 'pending' status.
+    For complete/failed runs, emits a single terminal event and closes.
+    For already-running pipelines (crawling/analyzing/judging), returns 409
+    so the client can poll instead of accidentally restarting the pipeline.
     """
     user_id = UUID(current_user["sub"])
-    await _get_run_or_404(db, run_id, user_id)  # ownership check
+    run = await _get_run_or_404(db, run_id, user_id)
+
+    if run.status == "complete":
+        report_id = str(run.report.id) if run.report else None
+        async def _done():
+            yield _sse("complete", "Research complete.", {"run_id": str(run_id), "report_id": report_id, "changes": []})
+        return StreamingResponse(_done(), media_type="text/event-stream", headers=_SSE_HEADERS)
+
+    if run.status == "failed":
+        async def _failed():
+            yield _sse("error", run.error or "Pipeline failed.")
+        return StreamingResponse(_failed(), media_type="text/event-stream", headers=_SSE_HEADERS)
+
+    if run.status != "pending":
+        # Pipeline is already running — refuse to restart it.
+        # The frontend should poll GET /runs/{id} until complete/failed.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Pipeline is already in progress. Poll GET /runs/{id} for status updates.",
+        )
 
     async def event_stream():
         async for event in run_research_pipeline(run_id, db):
@@ -134,11 +165,24 @@ async def stream_run(
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",  # disable nginx buffering
-        },
+        headers=_SSE_HEADERS,
     )
+
+
+@router.patch("/{run_id}", response_model=ResearchRunOut)
+async def update_run(
+    run_id: UUID,
+    payload: ResearchRunUpdate,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update mutable fields of a run (currently: title)."""
+    user_id = UUID(current_user["sub"])
+    run = await _get_run_or_404(db, run_id, user_id)
+    run.title = payload.title.strip() or run.title
+    await db.commit()
+    await db.refresh(run)
+    return run
 
 
 @router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -11,6 +11,10 @@ from typing import Any
 
 # ── Request schemas ────────────────────────────────────────────────────────────
 
+class ResearchRunUpdate(BaseModel):
+    title: str
+
+
 class ResearchRunCreate(BaseModel):
     title: str | None = None
     competitors: list[str] = []
