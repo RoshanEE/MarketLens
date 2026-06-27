@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { ResearchForm } from '../components/research/ResearchForm'
-import { ProgressStream } from '../components/research/ProgressStream'
+import { PipelineProgress } from '../components/research/PipelineProgress'
 import { Card } from '../components/ui/Card'
 import { researchApi } from '../services/api'
 import { useSSE } from '../hooks/useSSE'
@@ -25,14 +25,6 @@ export function NewResearchPage() {
     }
   }
 
-  // Navigate to the report once the pipeline completes
-  if (isDone && runId) {
-    const lastEvent = events[events.length - 1]
-    if (lastEvent?.event === 'complete') {
-      setTimeout(() => navigate(`/research/${runId}`), 1200)
-    }
-  }
-
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div className="flex items-center gap-3">
@@ -51,16 +43,14 @@ export function NewResearchPage() {
         </Card>
       ) : (
         <Card>
-          <h2 className="mb-4 font-semibold text-slate-900">Pipeline Progress</h2>
-          <ProgressStream events={events} isDone={isDone} />
-          {sseError && <p className="mt-3 text-sm text-red-600">{sseError}</p>}
-          {isDone && events.at(-1)?.event === 'complete' && (
-            <p className="mt-3 text-sm text-emerald-600">Analysis complete! Redirecting to your report…</p>
-          )}
-          {isDone && events.at(-1)?.event === 'error' && (
-            <button onClick={() => navigate('/')} className="btn-secondary mt-4">
-              Back to dashboard
-            </button>
+          <h2 className="mb-6 font-semibold text-slate-900">Pipeline Progress</h2>
+          <PipelineProgress
+            events={events}
+            isDone={isDone}
+            onViewReport={() => navigate(`/research/${runId}`)}
+          />
+          {sseError && (
+            <p className="mt-4 text-sm text-red-600">{sseError}</p>
           )}
         </Card>
       )}

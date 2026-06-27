@@ -24,6 +24,11 @@ export function useSSE(runId: string | null): UseSSEResult {
     const controller = new AbortController()
     abortRef.current = controller
 
+    // Clear previous run's state before connecting to the new stream
+    setEvents([])
+    setIsDone(false)
+    setError(null)
+
     async function stream() {
       const { data } = await supabase.auth.getSession()
       const token = data.session?.access_token

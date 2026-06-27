@@ -30,3 +30,10 @@
     @apply block text-sm font-medium text-slate-700 mb-1;
   }
 }
+
+@media print {
+  body { background: white !important; }
+  .card { box-shadow: none !important; }
+  /* Force all theme cards open when printing */
+  [data-print-expand] { display: block !important; }
+}

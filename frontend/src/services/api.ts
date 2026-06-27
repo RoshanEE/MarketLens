@@ -30,6 +30,9 @@ export const researchApi = {
   getRun: (id: string): Promise<ResearchRun> =>
     api.get<ResearchRun>(`/api/research/runs/${id}`).then((r) => r.data),
 
+  patchRun: (id: string, data: { title: string }): Promise<ResearchRun> =>
+    api.patch<ResearchRun>(`/api/research/runs/${id}`, data).then((r) => r.data),
+
   deleteRun: (id: string): Promise<void> =>
     api.delete(`/api/research/runs/${id}`).then(() => undefined),
 }
