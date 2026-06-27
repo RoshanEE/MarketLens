@@ -1,14 +1,17 @@
-# Builds the backend Docker image and pushes it to ECR.
-# App Runner watches ECR for a new :latest digest and auto-deploys — no
-# explicit deploy step needed here.
+# Builds the backend Docker image, pushes it to Lightsail, and creates a new deployment.
+# Lightsail does not use ECR — images are pushed directly via lightsailctl.
 #
 # Triggers:
-#   • Push to main when backend files change
+#   • Pull requests to main — lint only, no deploy
 #   • Manual: Actions → Deploy Backend → Run workflow → pick any branch
 #
 # Required GitHub Secrets:
 #   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
-#   ECR_REGISTRY    e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com
+#   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET
+#   DATABASE_URL
+#   ANTHROPIC_API_KEY
+#   OPENAI_API_KEY          (optional, leave empty if not used)
+#   CORS_ORIGINS            e.g. ["https://d1234abcd.cloudfront.net"]
 
 name: Deploy Backend
 
@@ -19,6 +22,9 @@ on:
       - backend/**
       - .github/workflows/deploy-backend.yml
   workflow_dispatch:
+
+env:
+  LIGHTSAIL_SERVICE: marketlens-backend-dev   # must match ServiceName in cloudformation.yml
 
 jobs:
   lint:
@@ -35,7 +41,7 @@ jobs:
         working-directory: backend
 
   deploy:
-    name: Build & Push to ECR
+    name: Build & Deploy to Lightsail
     runs-on: ubuntu-latest
     needs: lint
     if: github.event_name == 'workflow_dispatch'
@@ -49,14 +55,72 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Login to ECR
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Install lightsailctl
+        run: |
+          curl -L -o lightsailctl https://s3.us-west-2.amazonaws.com/lightsailctl/latest/linux-amd64/lightsailctl
+          sudo mv lightsailctl /usr/local/bin/lightsailctl
+          sudo chmod +x /usr/local/bin/lightsailctl
 
-      - name: Build & push
-        uses: docker/build-push-action@v5
-        with:
-          context: ./backend
-          push: true
-          tags: |
-            ${{ secrets.ECR_REGISTRY }}/marketlens-backend:${{ github.sha }}
-            ${{ secrets.ECR_REGISTRY }}/marketlens-backend:latest
+      - name: Build Docker image
+        run: docker build -t marketlens-backend:latest ./backend
+
+      - name: Push image to Lightsail
+        id: push
+        run: |
+          IMAGE=$(aws lightsail push-container-image \
+            --service-name ${{ env.LIGHTSAIL_SERVICE }} \
+            --label app \
+            --image marketlens-backend:latest \
+            --query image \
+            --output text)
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+
+      - name: Create deployment
+        env:
+          IMAGE: ${{ steps.push.outputs.image }}
+        run: |
+          CONTAINERS=$(jq -n \
+            --arg image "$IMAGE" \
+            --arg supabase_url "${{ secrets.SUPABASE_URL }}" \
+            --arg supabase_anon_key "${{ secrets.SUPABASE_ANON_KEY }}" \
+            --arg supabase_service_role_key "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            --arg supabase_jwt_secret "${{ secrets.SUPABASE_JWT_SECRET }}" \
+            --arg database_url "${{ secrets.DATABASE_URL }}" \
+            --arg anthropic_api_key "${{ secrets.ANTHROPIC_API_KEY }}" \
+            --arg openai_api_key "${{ secrets.OPENAI_API_KEY }}" \
+            --arg cors_origins "${{ secrets.CORS_ORIGINS }}" \
+            '{
+              "app": {
+                "image": $image,
+                "environment": {
+                  "ENVIRONMENT": "production",
+                  "DEBUG": "false",
+                  "SUPABASE_URL": $supabase_url,
+                  "SUPABASE_ANON_KEY": $supabase_anon_key,
+                  "SUPABASE_SERVICE_ROLE_KEY": $supabase_service_role_key,
+                  "SUPABASE_JWT_SECRET": $supabase_jwt_secret,
+                  "DATABASE_URL": $database_url,
+                  "ANTHROPIC_API_KEY": $anthropic_api_key,
+                  "OPENAI_API_KEY": $openai_api_key,
+                  "CORS_ORIGINS": $cors_origins
+                },
+                "ports": {"8000": "HTTP"}
+              }
+            }')
+
+          ENDPOINT=$(jq -n '{
+            "containerName": "app",
+            "containerPort": 8000,
+            "healthCheck": {
+              "path": "/health",
+              "intervalSeconds": 10,
+              "timeoutSeconds": 5,
+              "healthyThreshold": 2,
+              "unhealthyThreshold": 3
+            }
+          }')
+
+          aws lightsail create-container-service-deployment \
+            --service-name ${{ env.LIGHTSAIL_SERVICE }} \
+            --containers "$CONTAINERS" \
+            --public-endpoint "$ENDPOINT"

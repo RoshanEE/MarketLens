@@ -1,20 +1,21 @@
-# Deploys or updates the CloudFormation stack (App Runner + S3 + CloudFront).
+# Deploys or updates the CloudFormation stack (Lightsail service + S3 + CloudFront + IAM).
 # Manual trigger only — infrastructure should never change on a code push.
 #
 # Run from any branch via: Actions → Deploy Infrastructure → Run workflow
 #
 # Required GitHub Secrets:
 #   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
-#   ECR_REGISTRY              e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com
-#   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET
-#   DATABASE_URL
-#   ANTHROPIC_API_KEY
-#   OPENAI_API_KEY            (optional)
 
 name: Deploy Infrastructure
 
 on:
   workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy
+        type: choice
+        options: [dev, staging, prod]
+        default: dev
 
 jobs:
   deploy-stack:
@@ -45,7 +46,8 @@ jobs:
                 "$STACK_STATUS" == "ROLLBACK_COMPLETE" ]]; then
             echo "Stack is in unrecoverable state ($STACK_STATUS). Deleting before redeploy..."
             ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-            aws s3 rm s3://marketlens-frontend-$ACCOUNT_ID --recursive 2>/dev/null || true
+            ENV="${{ github.event.inputs.environment }}"
+            aws s3 rm s3://marketlens-frontend-$ENV --recursive 2>/dev/null || true
             aws cloudformation delete-stack --stack-name marketlens
             aws cloudformation wait stack-delete-complete --stack-name marketlens
             echo "Stack deleted. Proceeding with fresh deploy."
@@ -59,14 +61,7 @@ jobs:
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset \
             --parameter-overrides \
-              BackendImageUri=${{ secrets.ECR_REGISTRY }}/marketlens-backend:latest \
-              SupabaseUrl=${{ secrets.SUPABASE_URL }} \
-              SupabaseAnonKey=${{ secrets.SUPABASE_ANON_KEY }} \
-              SupabaseServiceRoleKey=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }} \
-              SupabaseJwtSecret=${{ secrets.SUPABASE_JWT_SECRET }} \
-              DatabaseUrl=${{ secrets.DATABASE_URL }} \
-              AnthropicApiKey=${{ secrets.ANTHROPIC_API_KEY }} \
-              OpenAIApiKey=${{ secrets.OPENAI_API_KEY }}
+              Environment=${{ github.event.inputs.environment }}
 
       - name: Show stack outputs
         run: |
