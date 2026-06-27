@@ -1,0 +1,34 @@
+# Web framework
+fastapi
+uvicorn[standard]
+
+# Database / Supabase
+supabase
+asyncpg
+sqlalchemy[asyncio]
+
+# Database migrations (sync driver for CLI scripts)
+psycopg2-binary
+
+# HTTP & scraping
+httpx
+beautifulsoup4
+trafilatura
+
+# AI
+anthropic
+openai
+
+# Config & validation
+pydantic
+pydantic-settings
+python-dotenv
+
+# Resilience
+tenacity
+
+# Logging
+structlog
+
+# Misc
+python-multipart

@@ -1,0 +1,297 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  MarketLens POC — App Runner (backend) + S3/CloudFront (frontend).
+  No Route53 or custom domain needed; CloudFront provides a public HTTPS URL.
+
+  DEPLOYMENT ORDER
+  ────────────────
+  1. Create the ECR repo once (not managed here to avoid chicken-and-egg):
+       aws ecr create-repository --repository-name marketlens-backend --region <region>
+
+  2. Add these GitHub Secrets so the CI workflow can push the first image:
+       AWS_ACCESS_KEY_ID      (your personal/admin key — swap for deployer key after step 5)
+       AWS_SECRET_ACCESS_KEY
+       AWS_REGION
+       ECR_REGISTRY           (e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com)
+
+  3. Push to main — the workflow builds the backend image and pushes :latest to ECR.
+
+  4. Deploy THIS template (App Runner pulls the image that now exists in ECR):
+       aws cloudformation deploy \
+         --template-file infrastructure/cloudformation.yml \
+         --stack-name marketlens \
+         --capabilities CAPABILITY_NAMED_IAM \
+         --parameter-overrides \
+           BackendImageUri=<ECR_REGISTRY>/marketlens-backend:latest \
+           SupabaseUrl=<...> \
+           SupabaseAnonKey=<...> \
+           SupabaseServiceRoleKey=<...> \
+           SupabaseJwtSecret=<...> \
+           DatabaseUrl=<...> \
+           AnthropicApiKey=<...>
+
+  5. Read the stack Outputs, then add/update these GitHub Secrets:
+       VITE_API_BASE_URL              ← BackendUrl output
+       VITE_SUPABASE_URL              ← your Supabase project URL
+       VITE_SUPABASE_ANON_KEY         ← your Supabase anon key
+       S3_BUCKET                      ← FrontendBucketName output
+       CLOUDFRONT_DISTRIBUTION_ID     ← CloudFrontDistributionId output
+       AWS_ACCESS_KEY_ID              ← create access keys for GitHubDeployerUser in IAM console
+       AWS_SECRET_ACCESS_KEY          ← same
+
+  6. Push to main again — full pipeline now works end to end.
+
+# ── Parameters ────────────────────────────────────────────────────────────────
+Parameters:
+  BackendImageUri:
+    Type: String
+    Description: >
+      Full ECR image URI for the backend, e.g.
+      123456789012.dkr.ecr.us-east-1.amazonaws.com/marketlens-backend:latest
+
+  SupabaseUrl:
+    Type: String
+    Description: Your Supabase project URL (https://xxx.supabase.co)
+
+  SupabaseAnonKey:
+    Type: String
+    NoEcho: true
+
+  SupabaseServiceRoleKey:
+    Type: String
+    NoEcho: true
+
+  SupabaseJwtSecret:
+    Type: String
+    NoEcho: true
+
+  DatabaseUrl:
+    Type: String
+    NoEcho: true
+    Description: postgresql+asyncpg://user:pass@db.xxx.supabase.co:5432/postgres
+
+  AnthropicApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+
+  OpenAIApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+
+# ── Resources ─────────────────────────────────────────────────────────────────
+Resources:
+
+  # ── IAM: App Runner role to pull images from ECR ────────────────────────────
+  AppRunnerECRRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: marketlens-apprunner-ecr
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: build.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
+
+  # ── IAM: scoped deployer user for GitHub Actions ─────────────────────────────
+  # After stack creation, go to IAM → Users → marketlens-github-deployer
+  # → Security credentials → Create access key → use in GitHub Secrets.
+  GitHubDeployerUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: marketlens-github-deployer
+
+  GitHubDeployerPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: marketlens-github-deployer
+      Users:
+        - !Ref GitHubDeployerUser
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # ECR auth (account-wide — required by AWS)
+          - Effect: Allow
+            Action: ecr:GetAuthorizationToken
+            Resource: "*"
+          # ECR push to the backend repo only
+          - Effect: Allow
+            Action:
+              - ecr:BatchCheckLayerAvailability
+              - ecr:CompleteLayerUpload
+              - ecr:InitiateLayerUpload
+              - ecr:PutImage
+              - ecr:UploadLayerPart
+              - ecr:BatchGetImage
+              - ecr:GetDownloadUrlForLayer
+            Resource: !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/marketlens-backend
+          # S3: sync frontend build artifacts
+          - Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:DeleteObject
+              - s3:GetObject
+              - s3:ListBucket
+            Resource:
+              - !GetAtt FrontendBucket.Arn
+              - !Sub ${FrontendBucket.Arn}/*
+          # CloudFront: bust cache after each frontend deploy
+          - Effect: Allow
+            Action: cloudfront:CreateInvalidation
+            Resource: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}
+
+  # ── App Runner: backend service ───────────────────────────────────────────────
+  # AutoDeploymentsEnabled: App Runner polls ECR every ~1 min; pushing :latest
+  # to ECR is all CI needs to do — no explicit "deploy" step required.
+  BackendService:
+    Type: AWS::AppRunner::Service
+    DependsOn: CloudFrontDistribution   # ensures CORS value is resolvable
+    Properties:
+      ServiceName: marketlens-backend
+      SourceConfiguration:
+        AuthenticationConfiguration:
+          AccessRoleArn: !GetAtt AppRunnerECRRole.Arn
+        AutoDeploymentsEnabled: true
+        ImageRepository:
+          ImageIdentifier: !Ref BackendImageUri
+          ImageRepositoryType: ECR
+          ImageConfiguration:
+            Port: "8000"
+            RuntimeEnvironmentVariables:
+              - Name: ENVIRONMENT
+                Value: production
+              - Name: DEBUG
+                Value: "false"
+              - Name: SUPABASE_URL
+                Value: !Ref SupabaseUrl
+              - Name: SUPABASE_ANON_KEY
+                Value: !Ref SupabaseAnonKey
+              - Name: SUPABASE_SERVICE_ROLE_KEY
+                Value: !Ref SupabaseServiceRoleKey
+              - Name: SUPABASE_JWT_SECRET
+                Value: !Ref SupabaseJwtSecret
+              - Name: DATABASE_URL
+                Value: !Ref DatabaseUrl
+              - Name: ANTHROPIC_API_KEY
+                Value: !Ref AnthropicApiKey
+              - Name: OPENAI_API_KEY
+                Value: !Ref OpenAIApiKey
+              # Automatically set to the CloudFront URL so CORS is wired up
+              # without a manual step.
+              - Name: CORS_ORIGINS
+                Value: !Sub '["https://${CloudFrontDistribution.DomainName}"]'
+      InstanceConfiguration:
+        Cpu: "0.25 vCPU"
+        Memory: "0.5 GB"
+      HealthCheckConfiguration:
+        Protocol: HTTP
+        Path: /health
+        Interval: 10
+        Timeout: 5
+        HealthyThreshold: 1
+        UnhealthyThreshold: 5
+
+  # ── S3: private bucket for compiled frontend assets ───────────────────────────
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub marketlens-frontend-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # ── CloudFront: Origin Access Control (successor to OAI) ─────────────────────
+  CloudFrontOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: marketlens-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # ── CloudFront: distribution ──────────────────────────────────────────────────
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        # PriceClass_100 = US, Canada, Europe only — cheapest option.
+        # Change to PriceClass_All for global coverage.
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt CloudFrontOAC.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""  # must be empty when using OAC
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          # AWS managed CachingOptimized policy — caches GET/HEAD, compresses responses
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+        # React SPA: S3 returns 403 for unknown paths (private bucket),
+        # so we remap both 403 and 404 to index.html so the client router
+        # can handle the URL.
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+
+  # ── S3 bucket policy: allow CloudFront (via OAC) to read objects ──────────────
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${FrontendBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}
+
+# ── Outputs ───────────────────────────────────────────────────────────────────
+Outputs:
+  BackendUrl:
+    Value: !Sub https://${BackendService.ServiceUrl}
+    Description: App Runner URL — add to GitHub Secrets as VITE_API_BASE_URL
+
+  CloudFrontUrl:
+    Value: !Sub https://${CloudFrontDistribution.DomainName}
+    Description: Your app's public URL — share this
+
+  FrontendBucketName:
+    Value: !Ref FrontendBucket
+    Description: S3 bucket name — add to GitHub Secrets as S3_BUCKET
+
+  CloudFrontDistributionId:
+    Value: !Ref CloudFrontDistribution
+    Description: Distribution ID — add to GitHub Secrets as CLOUDFRONT_DISTRIBUTION_ID
+
+  GitHubDeployerUserName:
+    Value: !Ref GitHubDeployerUser
+    Description: >
+      IAM user for CI. Go to IAM → Users → marketlens-github-deployer
+      → Security credentials → Create access key, then update
+      AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in GitHub Secrets.
