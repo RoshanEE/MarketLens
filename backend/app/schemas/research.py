@@ -5,7 +5,7 @@ Pydantic schemas for research run request/response serialization.
 from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
-from pydantic import BaseModel, HttpUrl, field_validator, model_validator
+from pydantic import BaseModel, field_validator, model_validator
 from typing import Any
 
 
