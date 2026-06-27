@@ -57,7 +57,7 @@ export function ReportPage() {
       streamStartedRef.current = id
       setStreamingRunId(id)
     }
-  }, [run?.status, id])
+  }, [run, id])
 
   // When SSE stream ends, reload run but do NOT auto-show report —
   // user clicks "View Report" in PipelineProgress instead.
