@@ -67,12 +67,12 @@ jobs:
       - name: Push image to Lightsail
         id: push
         run: |
-          IMAGE=$(aws lightsail push-container-image \
+          PUSH_OUTPUT=$(aws lightsail push-container-image \
             --service-name ${{ env.LIGHTSAIL_SERVICE }} \
             --label app \
-            --image marketlens-backend:latest \
-            --query image \
-            --output text)
+            --image marketlens-backend:latest)
+          echo "$PUSH_OUTPUT"
+          IMAGE=$(echo "$PUSH_OUTPUT" | grep "Image:" | awk '{print $2}' | tr -d '"')
           echo "image=$IMAGE" >> $GITHUB_OUTPUT
 
       - name: Create deployment
