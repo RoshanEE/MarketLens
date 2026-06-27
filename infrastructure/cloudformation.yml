@@ -173,7 +173,7 @@ Resources:
   FrontendBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub marketlens-frontend-${AWS::AccountId}
+      BucketName: !Sub marketlens-frontend-dev
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
