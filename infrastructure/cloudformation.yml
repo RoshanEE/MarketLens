@@ -60,6 +60,7 @@ Resources:
             Action:
               - lightsail:PushContainerImage
               - lightsail:CreateContainerServiceDeployment
+              - lightsail:CreateContainerServiceRegistryLogin
               - lightsail:GetContainerServices
               - lightsail:GetContainerImages
               - lightsail:GetContainerServiceDeployments
