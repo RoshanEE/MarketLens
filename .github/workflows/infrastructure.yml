@@ -1,0 +1,55 @@
+# Deploys or updates the CloudFormation stack (App Runner + S3 + CloudFront).
+# Manual trigger only — infrastructure should never change on a code push.
+#
+# Run from any branch via: Actions → Deploy Infrastructure → Run workflow
+#
+# Required GitHub Secrets:
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
+#   ECR_REGISTRY              e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com
+#   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET
+#   DATABASE_URL
+#   ANTHROPIC_API_KEY
+#   OPENAI_API_KEY            (optional)
+
+name: Deploy Infrastructure
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-stack:
+    name: CloudFormation Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy stack
+        run: |
+          aws cloudformation deploy \
+            --template-file infrastructure/cloudformation.yml \
+            --stack-name marketlens \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              BackendImageUri=${{ secrets.ECR_REGISTRY }}/marketlens-backend:latest \
+              SupabaseUrl=${{ secrets.SUPABASE_URL }} \
+              SupabaseAnonKey=${{ secrets.SUPABASE_ANON_KEY }} \
+              SupabaseServiceRoleKey=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }} \
+              SupabaseJwtSecret=${{ secrets.SUPABASE_JWT_SECRET }} \
+              DatabaseUrl=${{ secrets.DATABASE_URL }} \
+              AnthropicApiKey=${{ secrets.ANTHROPIC_API_KEY }} \
+              OpenAIApiKey=${{ secrets.OPENAI_API_KEY }}
+
+      - name: Show stack outputs
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name marketlens \
+            --query "Stacks[0].Outputs" \
+            --output table
