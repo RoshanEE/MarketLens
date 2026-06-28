@@ -96,8 +96,8 @@ class TestJudgeSingleClaim:
         assert result["confidence"] == 0.0
         assert "unparseable" in result["reasoning"].lower()
 
-    async def test_source_text_truncated_to_6000_chars(self):
-        """Confirm the LLM is called even when source is very long (truncated internally)."""
+    async def test_long_source_text_passed_to_llm_in_full(self):
+        """Full source text is forwarded to the LLM — no truncation applied."""
         long_source = "x" * 10_000
         mock_llm = _mock_llm(_verdict(True, 0.7))
         with patch("app.services.judge.get_llm_client", return_value=mock_llm):
@@ -107,7 +107,8 @@ class TestJudgeSingleClaim:
                 source_lookup={"https://example.com": long_source},
             )
 
-        mock_llm.complete.assert_called_once()
+        call_kwargs = mock_llm.complete.call_args
+        assert long_source in str(call_kwargs)
         assert result["supported"] is True
 
 
@@ -170,6 +171,28 @@ class TestJudgeInsights:
         assert len(results) == 2
         assert all("verified" in r for r in results)
         assert all("confidence" in r for r in results)
+
+    async def test_unsupported_confidence_is_inverted(self):
+        """When supported=False, effective confidence = 1 - raw so 90% sure it's wrong → 10% credibility."""
+        source_lookup = {"https://example.com": "Apple had record profits."}
+        insights = [self._make_insight("Apple went bankrupt.")]
+
+        with patch("app.services.judge.get_llm_client", return_value=_mock_llm(_verdict(False, 0.9, "Not found."))):
+            results = await _judge_insights(insights, source_lookup)
+
+        assert results[0]["verified"] is False
+        assert abs(results[0]["confidence"] - 0.1) < 0.001
+
+    async def test_unsupported_with_full_certainty_gives_zero_confidence(self):
+        """When supported=False and confidence=1.0, effective confidence = 0."""
+        source_lookup = {"https://example.com": "Apple had record profits."}
+        insights = [self._make_insight("Apple went bankrupt.")]
+
+        with patch("app.services.judge.get_llm_client", return_value=_mock_llm(_verdict(False, 1.0, "Clearly wrong."))):
+            results = await _judge_insights(insights, source_lookup)
+
+        assert results[0]["verified"] is False
+        assert results[0]["confidence"] == 0.0
 
     async def test_empty_insights_returns_empty_list(self):
         with patch("app.services.judge.get_llm_client") as mock_get:

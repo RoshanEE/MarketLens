@@ -51,12 +51,10 @@ async def _judge_single_claim(
             "reasoning": "Source content unavailable for verification.",
         }
 
-    truncated = source_text[:6000]
-
     raw = await get_llm_client().complete(
         model=settings.judge_model,
         system=JUDGE_SYSTEM,
-        user=JUDGE_PROMPT.format(source_text=truncated, claim=claim),
+        user=JUDGE_PROMPT.format(source_text=source_text, claim=claim),
         max_tokens=256,
     )
     raw = raw.strip()
@@ -86,8 +84,14 @@ async def _judge_insights(
         raw_confidence = v.get("confidence", 0.0)
         # Confidence reflects claim credibility:
         # - supported: use confidence as-is (e.g. 0.9 → 90%)
-        # - unsupported: invert (e.g. 90% sure it's wrong → 10% credibility)
-        effective_confidence = raw_confidence if supported else round(1.0 - raw_confidence, 3)
+        # - unsupported with score: invert (e.g. 90% sure it's wrong → 10% credibility)
+        # - unsupported with 0.0: source unavailable or no info — keep as 0
+        if supported:
+            effective_confidence = raw_confidence
+        elif raw_confidence > 0:
+            effective_confidence = round(1.0 - raw_confidence, 3)
+        else:
+            effective_confidence = 0.0
         result.append({
             **insight,
             "confidence": effective_confidence,
