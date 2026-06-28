@@ -6,13 +6,18 @@ import type { CreateRunPayload } from '../../types'
 interface ResearchFormProps {
   onSubmit: (payload: CreateRunPayload) => Promise<void>
   loading: boolean
+  initialValues?: Omit<CreateRunPayload, 'title'>
+  hideTitle?: boolean
+  submitLabel?: string
 }
 
-export function ResearchForm({ onSubmit, loading }: ResearchFormProps) {
-  const [competitors, setCompetitors] = useState<string[]>([])
-  const [topics, setTopics] = useState<string[]>([])
-  const [urls, setUrls] = useState<string[]>([''])
-  const [context, setContext] = useState('')
+export function ResearchForm({ onSubmit, loading, initialValues, hideTitle = false, submitLabel }: ResearchFormProps) {
+  const [competitors, setCompetitors] = useState<string[]>(() => initialValues?.competitors ?? [])
+  const [topics, setTopics] = useState<string[]>(() => initialValues?.topics ?? [])
+  const [urls, setUrls] = useState<string[]>(() =>
+    initialValues?.urls?.length ? [...initialValues.urls] : ['']
+  )
+  const [context, setContext] = useState(() => initialValues?.context ?? '')
   const [title, setTitle] = useState('')
 
   const [competitorInput, setCompetitorInput] = useState('')
@@ -80,15 +85,17 @@ export function ResearchForm({ onSubmit, loading }: ResearchFormProps) {
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Title */}
-      <div>
-        <label className="label">Research Title (optional)</label>
-        <input
-          className="input"
-          placeholder="e.g. Q3 Competitor Analysis"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-        />
-      </div>
+      {!hideTitle && (
+        <div>
+          <label className="label">Research Title (optional)</label>
+          <input
+            className="input"
+            placeholder="e.g. Q3 Competitor Analysis"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </div>
+      )}
 
       {/* Competitors */}
       <div>
@@ -177,7 +184,7 @@ export function ResearchForm({ onSubmit, loading }: ResearchFormProps) {
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <button type="submit" disabled={loading} className="btn-primary w-full justify-center py-3">
-        {loading ? <><Spinner size="sm" /> Running Research…</> : 'Run Market Intelligence Analysis'}
+        {loading ? <><Spinner size="sm" /> Running Research…</> : (submitLabel ?? 'Run Market Intelligence Analysis')}
       </button>
     </form>
   )

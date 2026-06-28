@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, StopCircle, Loader2 } from 'lucide-react'
 import { ResearchForm } from '../components/research/ResearchForm'
-import { ProgressStream } from '../components/research/ProgressStream'
+import { PipelineProgress } from '../components/research/PipelineProgress'
 import { Card } from '../components/ui/Card'
 import { researchApi } from '../services/api'
 import { useSSE } from '../hooks/useSSE'
@@ -12,11 +12,14 @@ export function NewResearchPage() {
   const navigate = useNavigate()
   const [runId, setRunId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [cancelState, setCancelState] = useState<'idle' | 'stopping' | 'stopped'>('idle')
+  const [lastPayload, setLastPayload] = useState<CreateRunPayload | null>(null)
 
   const { events, isDone, error: sseError } = useSSE(runId)
 
   const handleSubmit = async (payload: CreateRunPayload) => {
     setSubmitting(true)
+    setLastPayload(payload)
     try {
       const run = await researchApi.createRun(payload)
       setRunId(run.id)
@@ -25,12 +28,16 @@ export function NewResearchPage() {
     }
   }
 
-  // Navigate to the report once the pipeline completes
-  if (isDone && runId) {
-    const lastEvent = events[events.length - 1]
-    if (lastEvent?.event === 'complete') {
-      setTimeout(() => navigate(`/research/${runId}`), 1200)
-    }
+  const handleRetry = () => {
+    if (lastPayload) handleSubmit(lastPayload)
+  }
+
+  const handleCancel = async () => {
+    if (!runId) return
+    setCancelState('stopping')
+    await researchApi.cancelRun(runId)
+    setCancelState('stopped')
+    navigate(`/research/${runId}`)
   }
 
   return (
@@ -51,16 +58,24 @@ export function NewResearchPage() {
         </Card>
       ) : (
         <Card>
-          <h2 className="mb-4 font-semibold text-slate-900">Pipeline Progress</h2>
-          <ProgressStream events={events} isDone={isDone} />
-          {sseError && <p className="mt-3 text-sm text-red-600">{sseError}</p>}
-          {isDone && events.at(-1)?.event === 'complete' && (
-            <p className="mt-3 text-sm text-emerald-600">Analysis complete! Redirecting to your report…</p>
+          <h2 className="mb-6 font-semibold text-slate-900">Pipeline Progress</h2>
+          <PipelineProgress
+            events={events}
+            isDone={isDone}
+            onViewReport={() => navigate(`/research/${runId}`)}
+            onRetry={handleRetry}
+          />
+          {!isDone && (
+            <div className="mt-4 flex justify-end">
+              <button onClick={handleCancel} disabled={cancelState !== 'idle'} className="btn-danger text-xs py-1.5">
+                {cancelState === 'stopping' && <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Stopping…</>}
+                {cancelState === 'stopped'  && <>Stopped</>}
+                {cancelState === 'idle'     && <><StopCircle className="h-3.5 w-3.5" /> Stop pipeline</>}
+              </button>
+            </div>
           )}
-          {isDone && events.at(-1)?.event === 'error' && (
-            <button onClick={() => navigate('/')} className="btn-secondary mt-4">
-              Back to dashboard
-            </button>
+          {sseError && (
+            <p className="mt-4 text-sm text-red-600">{sseError}</p>
           )}
         </Card>
       )}

@@ -1,41 +1,65 @@
 """
-Thin router that returns the right async LLM client based on the model name.
-Supports Anthropic (claude-*) and OpenAI (gpt-*, o1-*, o3-*) models.
+LLM client with lazy provider initialization.
+Supports Anthropic (claude-*) and OpenAI (gpt-*, o1-*, o3-*, o4-*) models.
+A single shared instance is returned by get_llm_client().
 """
 
-from app.core.config import get_settings
+import structlog
+from functools import lru_cache
+from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 
-settings = get_settings()
+from app.core.config import Settings, get_settings
+
+log = structlog.get_logger(__name__)
 
 
-def _is_openai_model(model: str) -> bool:
-    return model.startswith(("gpt-", "o1-", "o3-", "o4-"))
+class LLMClient:
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._openai: AsyncOpenAI | None = None
+        self._anthropic: AsyncAnthropic | None = None
+
+    @property
+    def _openai_client(self) -> AsyncOpenAI:
+        if self._openai is None:
+            self._openai = AsyncOpenAI(api_key=self._settings.openai_api_key)
+        return self._openai
+
+    @property
+    def _anthropic_client(self) -> AsyncAnthropic:
+        if self._anthropic is None:
+            self._anthropic = AsyncAnthropic(api_key=self._settings.anthropic_api_key)
+        return self._anthropic
+
+    @staticmethod
+    def _is_openai(model: str) -> bool:
+        return model.startswith(("gpt-", "o1-", "o3-", "o4-"))
+
+    async def complete(self, model: str, system: str, user: str, max_tokens: int = 4096) -> str:
+        """Send a system + user prompt to the model and return the text response."""
+        log.debug("llm.complete", model=model, max_tokens=max_tokens)
+
+        if self._is_openai(model):
+            response = await self._openai_client.chat.completions.create(
+                model=model,
+                max_tokens=max_tokens,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+            )
+            return response.choices[0].message.content or ""
+        else:
+            response = await self._anthropic_client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": user}],
+            )
+            return response.content[0].text
 
 
-async def llm_complete(model: str, system: str, user: str, max_tokens: int = 4096) -> str:
-    """
-    Send a system + user message to the specified model and return the text response.
-    Handles provider selection automatically.
-    """
-    if _is_openai_model(model):
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=settings.openai_api_key)
-        response = await client.chat.completions.create(
-            model=model,
-            max_tokens=max_tokens,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        )
-        return response.choices[0].message.content or ""
-    else:
-        from anthropic import AsyncAnthropic
-        client = AsyncAnthropic(api_key=settings.anthropic_api_key)
-        response = await client.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        )
-        return response.content[0].text
+@lru_cache(maxsize=1)
+def get_llm_client() -> LLMClient:
+    return LLMClient(get_settings())

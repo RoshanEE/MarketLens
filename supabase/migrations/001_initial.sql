@@ -53,17 +53,26 @@ ALTER TABLE ml_source_urls   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ml_reports       ENABLE ROW LEVEL SECURITY;
 
 -- Runs policy
-CREATE POLICY "users_own_runs" ON ml_research_runs
-    USING (auth.uid() = user_id);
+DO $$ BEGIN
+  CREATE POLICY "users_own_runs" ON ml_research_runs
+      USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Source URLs policy (inherits via run ownership)
-CREATE POLICY "users_own_source_urls" ON ml_source_urls
-    USING (
-        run_id IN (SELECT id FROM ml_research_runs WHERE user_id = auth.uid())
-    );
+DO $$ BEGIN
+  CREATE POLICY "users_own_source_urls" ON ml_source_urls
+      USING (
+          run_id IN (SELECT id FROM ml_research_runs WHERE user_id = auth.uid())
+      );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Reports policy
-CREATE POLICY "users_own_reports" ON ml_reports
-    USING (
-        run_id IN (SELECT id FROM ml_research_runs WHERE user_id = auth.uid())
-    );
+DO $$ BEGIN
+  CREATE POLICY "users_own_reports" ON ml_reports
+      USING (
+          run_id IN (SELECT id FROM ml_research_runs WHERE user_id = auth.uid())
+      );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

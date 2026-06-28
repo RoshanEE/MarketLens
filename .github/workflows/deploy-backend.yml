@@ -70,25 +70,40 @@ jobs:
           PUSH_OUTPUT=$(aws lightsail push-container-image \
             --service-name ${{ env.LIGHTSAIL_SERVICE }} \
             --label app \
-            --image marketlens-backend:latest)
+            --image marketlens-backend:latest 2>&1)
+          echo "--- push output ---"
           echo "$PUSH_OUTPUT"
-          IMAGE=$(echo "$PUSH_OUTPUT" | grep "Image:" | awk '{print $2}' | tr -d '"')
+          echo "-------------------"
+          IMAGE=$(echo "$PUSH_OUTPUT" | grep -oE ':[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[0-9]+')
+          echo "Resolved image: $IMAGE"
+          if [[ -z "$IMAGE" ]]; then
+            echo "ERROR: failed to parse image name from push output"
+            exit 1
+          fi
           echo "image=$IMAGE" >> $GITHUB_OUTPUT
 
       - name: Create deployment
         env:
           IMAGE: ${{ steps.push.outputs.image }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
         run: |
           CONTAINERS=$(jq -n \
             --arg image "$IMAGE" \
-            --arg supabase_url "${{ secrets.SUPABASE_URL }}" \
-            --arg supabase_anon_key "${{ secrets.SUPABASE_ANON_KEY }}" \
-            --arg supabase_service_role_key "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            --arg supabase_jwt_secret "${{ secrets.SUPABASE_JWT_SECRET }}" \
-            --arg database_url "${{ secrets.DATABASE_URL }}" \
-            --arg anthropic_api_key "${{ secrets.ANTHROPIC_API_KEY }}" \
-            --arg openai_api_key "${{ secrets.OPENAI_API_KEY }}" \
-            --arg cors_origins "${{ secrets.CORS_ORIGINS }}" \
+            --arg supabase_url "$SUPABASE_URL" \
+            --arg supabase_anon_key "$SUPABASE_ANON_KEY" \
+            --arg supabase_service_role_key "$SUPABASE_SERVICE_ROLE_KEY" \
+            --arg supabase_jwt_secret "$SUPABASE_JWT_SECRET" \
+            --arg database_url "$DATABASE_URL" \
+            --arg anthropic_api_key "$ANTHROPIC_API_KEY" \
+            --arg openai_api_key "$OPENAI_API_KEY" \
+            --arg cors_origins "$CORS_ORIGINS" \
             '{
               "app": {
                 "image": $image,

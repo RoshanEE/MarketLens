@@ -15,6 +15,7 @@ from bs4 import BeautifulSoup
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from app.core.config import get_settings
+from app.models.enums import CrawlStatus
 
 settings = get_settings()
 
@@ -31,7 +32,7 @@ class CrawlResult:
     title: str | None
     content: str | None
     content_hash: str | None
-    status: str  # "success" | "failed"
+    status: CrawlStatus
     error: str | None = None
     crawled_at: datetime | None = None
 
@@ -86,7 +87,7 @@ async def crawl_url(url: str) -> CrawlResult:
         try:
             html = await _fetch_html(client, url)
         except Exception as exc:
-            return CrawlResult(url=url, title=None, content=None, content_hash=None, status="failed", error=str(exc))
+            return CrawlResult(url=url, title=None, content=None, content_hash=None, status=CrawlStatus.FAILED, error=str(exc))
 
     # Try Trafilatura first
     title, content = _extract_with_trafilatura(html, url)
@@ -100,7 +101,7 @@ async def crawl_url(url: str) -> CrawlResult:
     if not content:
         return CrawlResult(
             url=url, title=title, content=None, content_hash=None,
-            status="failed", error="No extractable content found."
+            status=CrawlStatus.FAILED, error="No extractable content found."
         )
 
     content_hash = hashlib.sha256(content.encode()).hexdigest()
@@ -109,7 +110,7 @@ async def crawl_url(url: str) -> CrawlResult:
         title=title,
         content=content,
         content_hash=content_hash,
-        status="success",
+        status=CrawlStatus.SUCCESS,
         crawled_at=datetime.now(timezone.utc),
     )
 

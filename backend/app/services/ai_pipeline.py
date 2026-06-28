@@ -1,24 +1,35 @@
 """
 AI analysis pipeline.
-Sends crawled content to Claude to extract structured market intelligence:
+Sends crawled content to Claude/OpenAI to extract structured market intelligence:
 themes, competitor activities, and source-grounded insights.
+
+Before analysis, each URL's content is passed through ContentChunker which splits
+it into paragraph chunks, generates local summaries, scores by relevance to the
+research query, and selects the top-K chunks. This ensures the most relevant content is used
+regardless of where it appears in the page.
 """
 
 import json
+import asyncio
 import structlog
+
 from app.core.config import get_settings
-from app.services.llm_client import llm_complete
+from app.services.llm_client import get_llm_client
+from app.services.chunker import ContentChunker
 
 log = structlog.get_logger(__name__)
 settings = get_settings()
 
-# Limit content per URL to avoid hitting context limits (approx 3000 tokens each)
-MAX_CONTENT_CHARS = 12_000
+SYSTEM_PROMPT = """You are a market intelligence analyst. Extract structured insights from web content \
+about competitor activity and market trends.
 
-SYSTEM_PROMPT = """You are a market intelligence analyst. Your task is to extract structured insights
-from web content about competitor activity and market trends. You produce precise, source-grounded
-analysis. Every claim you make must be directly supported by the provided source text.
-Do NOT invent or extrapolate information not present in the sources."""
+Rules you must never break:
+- Every claim must be traceable to a specific sentence in the provided source text.
+- If a competitor is not explicitly named in the sources, they must not appear in your output.
+- If no relevant information is found, return empty arrays — do not fill them with guesses.
+- Returning {"themes": [], "competitor_activities": [], "key_insights": []} is the correct \
+response when the sources do not contain relevant content.
+- Never infer, extrapolate, or combine facts from different sources to create a new claim."""
 
 ANALYSIS_PROMPT_TEMPLATE = """
 Analyze the following web content to extract market intelligence on these topics:
@@ -67,21 +78,47 @@ Return a JSON object with this exact structure:
 }}
 
 Rules:
-- Only include competitors explicitly mentioned in the sources.
-- Only include themes with at least one source-backed insight.
-- Keep claims short (1-2 sentences) and factual.
+- Only include competitors explicitly named in the source text — never add competitors from your training data.
+- Only include themes with at least one claim you can quote or closely paraphrase from a specific source sentence.
+- If the sources contain nothing relevant to the competitors or topics, all three arrays must be empty.
+- Keep claims short (1-2 sentences) and factual; do not merge or infer across sources.
 - Use the exact URL string from the source metadata.
+- When in doubt, omit — an empty output is better than a hallucinated one.
 """
 
 
 def _format_sources(crawl_results: list[dict]) -> str:
     parts = []
     for r in crawl_results:
-        content = (r["content"] or "")[:MAX_CONTENT_CHARS]
         parts.append(
-            f"--- SOURCE ---\nURL: {r['url']}\nTITLE: {r.get('title') or 'Unknown'}\n\n{content}\n"
+            f"--- SOURCE ---\nURL: {r['url']}\nTITLE: {r.get('title') or 'Unknown'}\n\n{r['content']}\n"
         )
     return "\n".join(parts)
+
+
+async def _prepare_sources(
+    crawl_results: list[dict],
+    competitors: list[str],
+    topics: list[str],
+) -> list[dict]:
+    """
+    Run ContentChunker on each URL concurrently to select the most relevant
+    paragraphs before sending to the main analysis LLM.
+    """
+    llm = get_llm_client()
+    chunker = ContentChunker(llm)
+
+    async def process(r: dict) -> dict:
+        content = r["content"] or ""
+        relevant = await chunker.select(
+            content=content,
+            competitors=competitors,
+            topics=topics,
+            summarization_model=settings.judge_model,
+        )
+        return {**r, "content": relevant}
+
+    return list(await asyncio.gather(*[process(r) for r in crawl_results]))
 
 
 async def analyze_content(
@@ -91,10 +128,13 @@ async def analyze_content(
     context: str | None,
 ) -> dict:
     """
-    Send crawled content to Claude for structured analysis.
+    Send crawled content to the analysis LLM for structured market intelligence.
+    Each URL's content is first filtered to its most relevant chunks.
     Returns the parsed JSON analysis dict.
     """
-    sources_text = _format_sources(crawl_results)
+    processed = await _prepare_sources(crawl_results, competitors, topics)
+    sources_text = _format_sources(processed)
+
     prompt = ANALYSIS_PROMPT_TEMPLATE.format(
         competitors=", ".join(competitors) if competitors else "None specified",
         topics=", ".join(topics) if topics else "None specified",
@@ -104,7 +144,8 @@ async def analyze_content(
 
     log.info("ai_pipeline.analyze_start", model=settings.analysis_model, source_count=len(crawl_results))
 
-    raw = await llm_complete(
+    llm = get_llm_client()
+    raw = await llm.complete(
         model=settings.analysis_model,
         system=SYSTEM_PROMPT,
         user=prompt,
@@ -112,7 +153,6 @@ async def analyze_content(
     )
     raw = raw.strip()
 
-    # Strip markdown code fences if the model wrapped the JSON
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):

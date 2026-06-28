@@ -9,7 +9,7 @@ import asyncio
 import json
 import structlog
 from app.core.config import get_settings
-from app.services.llm_client import llm_complete
+from app.services.llm_client import get_llm_client
 
 log = structlog.get_logger(__name__)
 settings = get_settings()
@@ -53,7 +53,7 @@ async def _judge_single_claim(
 
     truncated = source_text[:6000]
 
-    raw = await llm_complete(
+    raw = await get_llm_client().complete(
         model=settings.judge_model,
         system=JUDGE_SYSTEM,
         user=JUDGE_PROMPT.format(source_text=truncated, claim=claim),

@@ -59,6 +59,7 @@ export interface ResearchRun {
   context: string | null
   status: RunStatus
   error: string | null
+  source_run_id: string | null
   created_at: string
   completed_at: string | null
   source_urls: SourceUrl[]
@@ -74,6 +75,9 @@ export interface ResearchRunSummary {
   created_at: string
   completed_at: string | null
   url_count: number
+  overall_confidence: number | null
+  verified_claims: number | null
+  total_claims: number | null
 }
 
 export interface ProgressEvent {
@@ -88,4 +92,5 @@ export interface CreateRunPayload {
   topics: string[]
   urls: string[]
   context?: string
+  source_run_id?: string
 }
