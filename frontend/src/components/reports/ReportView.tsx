@@ -234,11 +234,11 @@ export function ReportView({ run, report, onRerun, onTitleChange }: ReportViewPr
                   <div className="space-y-1.5">
                     {run.source_urls.map(src => (
                       <div key={src.id} className="flex items-center gap-2">
-                        {src.crawl_status === 'success'
+                        {src.crawl_status === 'success' && !src.error
                           ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                           : (
                             <span className="relative shrink-0 group/err">
-                              <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
+                              <AlertTriangle className={`h-3.5 w-3.5 ${src.crawl_status === 'success' ? 'text-amber-400' : 'text-red-400'}`} />
                               <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover/err:block w-max max-w-[220px] rounded bg-slate-800 px-2 py-1 text-xs text-white shadow-lg z-10 whitespace-normal">
                                 {src.error ?? 'Crawl failed'}
                               </span>
