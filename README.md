@@ -105,6 +105,21 @@ uvicorn app.main:app --reload --port 8000
 
 API docs available at `http://localhost:8000/docs` (debug mode only).
 
+**4. Run the tests** (optional)
+
+```bash
+cd backend
+pytest tests/ -v
+```
+
+Run a specific test file:
+
+```bash
+pytest tests/test_report_builder.py -v
+```
+
+Tests cover pure utility functions and do not require a live database or API keys.
+
 **4. Start the frontend**
 
 ```bash
