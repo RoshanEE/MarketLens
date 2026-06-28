@@ -8,18 +8,21 @@ GET  /runs/{id}/stream — SSE stream for live pipeline progress
 DELETE /runs/{id}   — delete a run
 """
 
+import asyncio
 import json
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from app.core.deps import get_current_user
-from app.core.database import get_db
-from app.models.research_run import ResearchRun, SourceUrl
+from app.core.database import get_db, AsyncSessionLocal
+from app.models.research_run import ResearchRun, SourceUrl, Report
+from app.models.enums import RunStatus
 from app.schemas.research import (
     ResearchRunCreate,
     ResearchRunOut,
@@ -46,6 +49,7 @@ async def create_run(
         competitors=payload.competitors,
         topics=payload.topics,
         context=payload.context,
+        source_run_id=payload.source_run_id,
         status="pending",
     )
     db.add(run)
@@ -77,30 +81,49 @@ async def list_runs(
     """List all research runs for the authenticated user, newest first."""
     user_id = UUID(current_user["sub"])
 
+    url_count_sq = (
+        select(func.count(SourceUrl.id))
+        .where(SourceUrl.run_id == ResearchRun.id)
+        .correlate(ResearchRun)
+        .scalar_subquery()
+    )
+
     result = await db.execute(
-        select(ResearchRun)
+        select(
+            ResearchRun.id,
+            ResearchRun.title,
+            ResearchRun.competitors,
+            ResearchRun.topics,
+            ResearchRun.status,
+            ResearchRun.created_at,
+            ResearchRun.completed_at,
+            url_count_sq.label("url_count"),
+            Report.overall_confidence,
+            Report.hallucination_results,
+        )
+        .outerjoin(Report, Report.run_id == ResearchRun.id)
         .where(ResearchRun.user_id == user_id)
         .order_by(ResearchRun.created_at.desc())
         .offset(offset)
         .limit(limit)
-        .options(selectinload(ResearchRun.source_urls))
     )
-    runs = result.scalars().all()
+    rows = result.all()
 
     return [
         ResearchRunSummary(
-            **{
-                "id": r.id,
-                "title": r.title,
-                "competitors": r.competitors,
-                "topics": r.topics,
-                "status": r.status,
-                "created_at": r.created_at,
-                "completed_at": r.completed_at,
-                "url_count": len(r.source_urls),
-            }
+            id=row.id,
+            title=row.title,
+            competitors=row.competitors,
+            topics=row.topics,
+            status=row.status,
+            created_at=row.created_at,
+            completed_at=row.completed_at,
+            url_count=row.url_count,
+            overall_confidence=row.overall_confidence,
+            verified_claims=(row.hallucination_results or {}).get("verified_claims") if row.hallucination_results else None,
+            total_claims=(row.hallucination_results or {}).get("total_claims") if row.hallucination_results else None,
         )
-        for r in runs
+        for row in rows
     ]
 
 
@@ -139,18 +162,18 @@ async def stream_run(
     user_id = UUID(current_user["sub"])
     run = await _get_run_or_404(db, run_id, user_id)
 
-    if run.status == "complete":
+    if run.status == RunStatus.COMPLETE:
         report_id = str(run.report.id) if run.report else None
         async def _done():
             yield _sse("complete", "Research complete.", {"run_id": str(run_id), "report_id": report_id, "changes": []})
         return StreamingResponse(_done(), media_type="text/event-stream", headers=_SSE_HEADERS)
 
-    if run.status == "failed":
+    if run.status == RunStatus.FAILED:
         async def _failed():
             yield _sse("error", run.error or "Pipeline failed.")
         return StreamingResponse(_failed(), media_type="text/event-stream", headers=_SSE_HEADERS)
 
-    if run.status != "pending":
+    if run.status != RunStatus.PENDING:
         # Pipeline is already running — refuse to restart it.
         # The frontend should poll GET /runs/{id} until complete/failed.
         raise HTTPException(
@@ -158,8 +181,27 @@ async def stream_run(
             detail="Pipeline is already in progress. Poll GET /runs/{id} for status updates.",
         )
 
+    # Run the pipeline in a background task with its own DB session so it
+    # survives if the SSE client disconnects before the pipeline finishes.
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+    async def _background_pipeline() -> None:
+        async with AsyncSessionLocal() as task_db:
+            try:
+                async for event in run_research_pipeline(run_id, task_db):
+                    await queue.put(event)
+            except Exception:
+                pass
+            finally:
+                await queue.put(None)  # sentinel: pipeline done
+
+    asyncio.create_task(_background_pipeline())
+
     async def event_stream():
-        async for event in run_research_pipeline(run_id, db):
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
             yield event
 
     return StreamingResponse(
@@ -182,6 +224,26 @@ async def update_run(
     run.title = payload.title.strip() or run.title
     await db.commit()
     await db.refresh(run)
+    return run
+
+
+@router.post("/{run_id}/cancel", response_model=ResearchRunOut)
+async def cancel_run(
+    run_id: UUID,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancel an in-progress run. No-op if the run is already complete or failed."""
+    user_id = UUID(current_user["sub"])
+    run = await _get_run_or_404(db, run_id, user_id)
+
+    if run.status not in (RunStatus.COMPLETE, RunStatus.FAILED):
+        run.status = RunStatus.FAILED
+        run.error = "Cancelled by user."
+        run.completed_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(run)
+
     return run
 
 

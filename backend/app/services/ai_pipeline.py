@@ -5,8 +5,7 @@ themes, competitor activities, and source-grounded insights.
 
 Before analysis, each URL's content is passed through ContentChunker which splits
 it into paragraph chunks, generates local summaries, scores by relevance to the
-research query, and selects the top-K chunks. This replaces the previous hard
-character-truncation approach and ensures the most relevant content is used
+research query, and selects the top-K chunks. This ensures the most relevant content is used
 regardless of where it appears in the page.
 """
 
@@ -21,10 +20,16 @@ from app.services.chunker import ContentChunker
 log = structlog.get_logger(__name__)
 settings = get_settings()
 
-SYSTEM_PROMPT = """You are a market intelligence analyst. Your task is to extract structured insights
-from web content about competitor activity and market trends. You produce precise, source-grounded
-analysis. Every claim you make must be directly supported by the provided source text.
-Do NOT invent or extrapolate information not present in the sources."""
+SYSTEM_PROMPT = """You are a market intelligence analyst. Extract structured insights from web content \
+about competitor activity and market trends.
+
+Rules you must never break:
+- Every claim must be traceable to a specific sentence in the provided source text.
+- If a competitor is not explicitly named in the sources, they must not appear in your output.
+- If no relevant information is found, return empty arrays — do not fill them with guesses.
+- Returning {"themes": [], "competitor_activities": [], "key_insights": []} is the correct \
+response when the sources do not contain relevant content.
+- Never infer, extrapolate, or combine facts from different sources to create a new claim."""
 
 ANALYSIS_PROMPT_TEMPLATE = """
 Analyze the following web content to extract market intelligence on these topics:
@@ -73,10 +78,12 @@ Return a JSON object with this exact structure:
 }}
 
 Rules:
-- Only include competitors explicitly mentioned in the sources.
-- Only include themes with at least one source-backed insight.
-- Keep claims short (1-2 sentences) and factual.
+- Only include competitors explicitly named in the source text — never add competitors from your training data.
+- Only include themes with at least one claim you can quote or closely paraphrase from a specific source sentence.
+- If the sources contain nothing relevant to the competitors or topics, all three arrays must be empty.
+- Keep claims short (1-2 sentences) and factual; do not merge or infer across sources.
 - Use the exact URL string from the source metadata.
+- When in doubt, omit — an empty output is better than a hallucinated one.
 """
 
 
