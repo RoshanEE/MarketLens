@@ -24,6 +24,44 @@ MarketLens lets users provide a set of competitor names, research topics, and so
 
 ---
 
+## Getting Started
+
+### Sign Up
+
+Visit the app and click **Sign up**. Enter your email and password — Supabase Auth will send a verification email. Click the link in the email to confirm your account, then return to the app and sign in.
+
+### After Signing In
+
+You land on the **Dashboard**, which shows all your research runs. To create your first one, click **New Research** and fill in:
+
+- **Competitors** — company names you want to track (e.g. "Notion", "Linear")
+- **Topics** — themes to look for (e.g. "pricing", "product launch")
+- **Source URLs** — the web pages to crawl and analyze
+- **Context** *(optional)* — background about your company or angle, to help the AI produce more targeted insights
+
+Once submitted, a live progress view shows the pipeline running in real time — crawling, analyzing, and verifying claims. When complete, the full report opens automatically.
+
+### What You Can Do in a Report
+
+- Read **Key Insights**, **Themes**, and **Competitor Activities** — each claim is linked to the exact source URL it came from
+- Check the **confidence score** and **verified/total claims** count in the header to gauge report reliability
+- Expand **"Generated against"** to see the full configuration the report was built from — competitors, topics, context, and all source URLs
+- View **Sources** to see which URLs crawled successfully and hover over any failed URL to see the crawl error
+- See **Changes Detected** (on re-runs) to understand what content changed since the last run
+- Export the report as **PDF** using the download button in the report header
+- Click **Re-run** to run the same research again — optionally adding or changing URLs — and get a fresh report with change detection
+
+### Navigation
+
+- **Dashboard** — overview of all runs with status, confidence score, and claims verified at a glance
+- **New Research** — create a run
+- **Report** — view any completed run's full report (accessible by clicking a row in the dashboard table)
+- **Pipeline view** — opens automatically when a run is in progress; accessible by clicking an in-progress row in the dashboard
+
+For a full walkthrough of every screen and action, see [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md).
+
+---
+
 ## Technology Stack
 
 | Layer | Technology |
