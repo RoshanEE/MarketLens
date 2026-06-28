@@ -7,7 +7,7 @@
 #
 # Required GitHub Secrets:
 #   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
-#   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET
+#   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
 #   DATABASE_URL
 #   ANTHROPIC_API_KEY
 #   OPENAI_API_KEY          (optional, leave empty if not used)
@@ -88,7 +88,6 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -99,7 +98,6 @@ jobs:
             --arg supabase_url "$SUPABASE_URL" \
             --arg supabase_anon_key "$SUPABASE_ANON_KEY" \
             --arg supabase_service_role_key "$SUPABASE_SERVICE_ROLE_KEY" \
-            --arg supabase_jwt_secret "$SUPABASE_JWT_SECRET" \
             --arg database_url "$DATABASE_URL" \
             --arg anthropic_api_key "$ANTHROPIC_API_KEY" \
             --arg openai_api_key "$OPENAI_API_KEY" \
@@ -113,7 +111,6 @@ jobs:
                   "SUPABASE_URL": $supabase_url,
                   "SUPABASE_ANON_KEY": $supabase_anon_key,
                   "SUPABASE_SERVICE_ROLE_KEY": $supabase_service_role_key,
-                  "SUPABASE_JWT_SECRET": $supabase_jwt_secret,
                   "DATABASE_URL": $database_url,
                   "ANTHROPIC_API_KEY": $anthropic_api_key,
                   "OPENAI_API_KEY": $openai_api_key,
