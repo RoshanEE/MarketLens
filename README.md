@@ -16,7 +16,7 @@ MarketLens lets users provide a set of competitor names, research topics, and so
 
 1. **User input** — competitors, topics, source URLs, optional context
 2. **Crawl** — Trafilatura (primary) + BeautifulSoup (fallback) extract clean article text from each URL concurrently
-3. **Chunk & score** — long pages are split into paragraphs, scored for relevance to the research query by a fast LLM, and the top-K most relevant chunks are selected before analysis
+3. **Chunk & score** — long pages are split into paragraphs, scored for relevance to the research query by a fast LLM, and the top-K most relevant chunks are selected before analysis *(inspired by [arxiv.org/html/2502.00448v1](https://arxiv.org/html/2502.00448v1) — see [`docs/WORKFLOWS.md`](docs/WORKFLOWS.md) for details)*
 4. **AI analysis** — GPT-4.1 generates structured themes, competitor activities, and key insights, each linked to a specific source URL
 5. **Hallucination judge** — GPT-4.1-mini independently verifies each claim against its source text, attaching a confidence score and a verification flag
 6. **Structured report** — rendered in the UI with source traceability, confidence indicators, and change detection vs. prior runs
