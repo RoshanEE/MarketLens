@@ -127,6 +127,9 @@ async def run_research_pipeline(
         successful = [r for r in crawl_results if r.status == CrawlStatus.SUCCESS]
         failed = [r for r in crawl_results if r.status == CrawlStatus.FAILED]
 
+        for r in crawl_results:
+            log.info("crawl.result", url=r.url, status=r.status.value, chars=len(r.content or ""))
+
         yield _make_event(
             "crawling",
             f"Crawled {len(successful)}/{len(urls)} URLs successfully.",
@@ -156,7 +159,7 @@ async def run_research_pipeline(
             for r in successful
         ]
 
-        analysis = await analyze_content(
+        analysis, chunked_sources = await analyze_content(
             crawl_results=crawl_dicts,
             competitors=run.competitors or [],
             topics=run.topics or [],
@@ -177,7 +180,9 @@ async def run_research_pipeline(
         await db.commit()
         yield _make_event("judging", "Running hallucination verification on claims…")
 
-        verified = await run_hallucination_check(analysis, crawl_dicts)
+        for s in chunked_sources:
+            log.info("judge.source_input", url=s["url"], chars=len(s["content"] or ""))
+        verified = await run_hallucination_check(analysis, chunked_sources)
 
         yield _make_event(
             "judging",

@@ -136,12 +136,17 @@ class ContentChunker:
 
         try:
             parsed = json.loads(raw)
-            if isinstance(parsed, list) and len(parsed) == len(chunks):
-                return [
+            if isinstance(parsed, list) and len(parsed) > 0:
+                if len(parsed) != len(chunks):
+                    log.warning("chunker.summarize_length_mismatch", expected=len(chunks), got=len(parsed))
+                # Truncate extras or pad missing entries with a zero-score fallback
+                results: list[tuple[str, float]] = [
                     (str(item.get("summary", "")), float(item.get("relevance", 0.0)))
-                    for item in parsed
+                    for item in parsed[:len(chunks)]
                 ]
-            log.warning("chunker.summarize_length_mismatch", expected=len(chunks), got=len(parsed))
+                for i in range(len(parsed), len(chunks)):
+                    results.append((chunks[i].split(".")[0].strip() + ".", 0.0))
+                return results
         except (json.JSONDecodeError, ValueError, TypeError, AttributeError):
             log.warning("chunker.summarize_parse_error", raw=raw[:300])
 

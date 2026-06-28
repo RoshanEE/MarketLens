@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 
 import httpx
+import structlog
 import trafilatura
 from bs4 import BeautifulSoup
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
@@ -17,7 +18,10 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from app.core.config import get_settings
 from app.models.enums import CrawlStatus
 
+log = structlog.get_logger(__name__)
 settings = get_settings()
+
+MIN_CONTENT_CHARS = 300
 
 HEADERS = {
     "User-Agent": (
@@ -104,6 +108,11 @@ async def crawl_url(url: str) -> CrawlResult:
             status=CrawlStatus.FAILED, error="No extractable content found."
         )
 
+    sparse_warning = None
+    if len(content) < MIN_CONTENT_CHARS:
+        sparse_warning = f"Only {len(content)} chars extracted — page may require JS rendering."
+        log.warning("crawler.sparse_content", url=url, chars=len(content), threshold=MIN_CONTENT_CHARS)
+
     content_hash = hashlib.sha256(content.encode()).hexdigest()
     return CrawlResult(
         url=url,
@@ -111,6 +120,7 @@ async def crawl_url(url: str) -> CrawlResult:
         content=content,
         content_hash=content_hash,
         status=CrawlStatus.SUCCESS,
+        error=sparse_warning,
         crawled_at=datetime.now(timezone.utc),
     )
 

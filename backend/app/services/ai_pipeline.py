@@ -110,6 +110,8 @@ async def _prepare_sources(
 
     async def process(r: dict) -> dict:
         content = r["content"] or ""
+        raw_chunks = chunker.split(content)
+        log.info("ai_pipeline.chunks_before_summarize", url=r["url"], total_chunks=len(raw_chunks), top_k=chunker.top_k)
         relevant = await chunker.select(
             content=content,
             competitors=competitors,
@@ -126,13 +128,18 @@ async def analyze_content(
     competitors: list[str],
     topics: list[str],
     context: str | None,
-) -> dict:
+) -> tuple[dict, list[dict]]:
     """
     Send crawled content to the analysis LLM for structured market intelligence.
     Each URL's content is first filtered to its most relevant chunks.
-    Returns the parsed JSON analysis dict.
+    Returns (analysis dict, processed sources with chunked content).
+    The processed sources are returned so the judge can verify claims against
+    the same text the analysis LLM actually saw.
     """
     processed = await _prepare_sources(crawl_results, competitors, topics)
+    # TEMP: log content going into the main analysis LLM per source
+    for r in processed:
+        log.info("ai_pipeline.source_input", url=r["url"], chars=len(r["content"] or ""))
     sources_text = _format_sources(processed)
 
     prompt = ANALYSIS_PROMPT_TEMPLATE.format(
@@ -165,4 +172,4 @@ async def analyze_content(
         raise ValueError(f"AI returned malformed JSON: {exc}") from exc
 
     log.info("ai_pipeline.analyze_complete", themes=len(result.get("themes", [])))
-    return result
+    return result, processed

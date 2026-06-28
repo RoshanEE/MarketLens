@@ -80,15 +80,21 @@ async def _judge_insights(
     verdicts = await asyncio.gather(
         *[_judge_single_claim(ins["claim"], ins.get("source_url", ""), source_lookup) for ins in insights]
     )
-    return [
-        {
+    result = []
+    for insight, v in zip(insights, verdicts):
+        supported = v.get("supported", False)
+        raw_confidence = v.get("confidence", 0.0)
+        # Confidence reflects claim credibility:
+        # - supported: use confidence as-is (e.g. 0.9 → 90%)
+        # - unsupported: invert (e.g. 90% sure it's wrong → 10% credibility)
+        effective_confidence = raw_confidence if supported else round(1.0 - raw_confidence, 3)
+        result.append({
             **insight,
-            "confidence": v.get("confidence", 0.0),
-            "verified": v.get("supported", False) and v.get("confidence", 0.0) >= CONFIDENCE_THRESHOLD,
+            "confidence": effective_confidence,
+            "verified": supported and raw_confidence >= CONFIDENCE_THRESHOLD,
             "judge_reasoning": v.get("reasoning"),
-        }
-        for insight, v in zip(insights, verdicts)
-    ]
+        })
+    return result
 
 
 async def run_hallucination_check(
