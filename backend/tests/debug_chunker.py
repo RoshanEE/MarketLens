@@ -94,7 +94,7 @@ MIN_RELEVANCE = 2.0  # chunks scoring below this (0-10) are treated as off-topic
 USE_REAL_LLM = True
 
 # LLM model used for summarization (only relevant when USE_REAL_LLM = True)
-SUMMARIZATION_MODEL = "gpt-4o-mini"
+SUMMARIZATION_MODEL = "gpt-4.1-mini"
 
 # ==============================================================================
 

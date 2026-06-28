@@ -28,8 +28,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
 
     # LLM model selection
-    analysis_model: str = "gpt-4o"
-    judge_model: str = "gpt-4o-mini"
+    analysis_model: str = "gpt-4.1"
+    judge_model: str = "gpt-4.1-mini"
 
     # Crawler
     crawler_timeout_seconds: int = 30
