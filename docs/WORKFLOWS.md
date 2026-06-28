@@ -91,6 +91,16 @@ BeautifulSoup is still used as a fallback when Trafilatura returns no content (e
 
 When multiple URLs are crawled, requests are issued **concurrently** via `asyncio.gather` with individual `httpx` connections, so a single slow or failing URL doesn't block the rest.
 
+#### Crawling Limitation — JavaScript-Rendered Pages
+
+Both Trafilatura and BeautifulSoup operate on the raw HTML returned by the server. Sites that render their content entirely in JavaScript (e.g. Forbes, Bloomberg, WSJ) return a near-empty HTML shell — the actual content only appears after the browser executes JavaScript. In these cases the crawler receives a 200 OK but extracts very little text (sometimes just a copyright footer).
+
+MarketLens detects this: if a successfully fetched page yields fewer than 300 characters of content, a warning is logged and flagged on the source URL in the report UI (amber triangle with a tooltip). The URL still participates in the pipeline but contributes little to the analysis.
+
+**Workaround:** prefer URLs from blogs, press releases, news aggregators, or API documentation pages that serve server-rendered HTML. Avoid paywalled or heavily JS-driven list/dashboard pages.
+
+**Future fix:** integrate a headless browser (Playwright) for pages that fail the character threshold — see [FUTURE_SCOPE.md](FUTURE_SCOPE.md).
+
 ---
 
 ### Content Chunking — Why Local Summarization Before Global Analysis
