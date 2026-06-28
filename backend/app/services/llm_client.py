@@ -44,6 +44,7 @@ class LLMClient:
             response = await self._openai_client.chat.completions.create(
                 model=model,
                 max_tokens=max_tokens,
+                temperature=0,
                 messages=[
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
@@ -54,6 +55,7 @@ class LLMClient:
             response = await self._anthropic_client.messages.create(
                 model=model,
                 max_tokens=max_tokens,
+                temperature=0,
                 system=system,
                 messages=[{"role": "user", "content": user}],
             )
