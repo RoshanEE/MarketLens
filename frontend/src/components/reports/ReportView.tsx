@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import {
   AlertTriangle, CheckCircle2, TrendingUp, Users, Lightbulb,
   RefreshCw, ChevronDown, ChevronUp, RotateCcw, Printer,
-  Globe, Tag, FileText, Loader2, Pencil, X, Check,
+  Globe, Tag, FileText, Loader2, Pencil, X, Check, SearchX,
 } from 'lucide-react'
 import { ThemeCard } from './ThemeCard'
 import { SourceBadge } from './SourceBadge'
@@ -62,10 +62,15 @@ export function ReportView({ run, report, onRerun, onTitleChange }: ReportViewPr
     if (e.key === 'Escape') cancelEditTitle()
   }
 
-  const confidence = report.overall_confidence ?? 0
-  const confVariant = confidence >= 0.75 ? 'success' : confidence >= 0.5 ? 'warning' : 'error'
+  const confidence = report.overall_confidence   // null when no claims were generated
   const verified = report.hallucination_results?.verified_claims ?? 0
   const total = report.hallucination_results?.total_claims ?? 0
+  const hasContent =
+    report.key_insights.length > 0 ||
+    report.themes.length > 0 ||
+    report.competitor_activities.length > 0
+  const confPct = confidence !== null ? confidence : 0
+  const confVariant = !hasContent ? 'default' : confPct >= 0.75 ? 'success' : confPct >= 0.5 ? 'warning' : 'error'
 
   const handleRerun = async (payload: CreateRunPayload) => {
     if (!onRerun) return
@@ -135,8 +140,11 @@ export function ReportView({ run, report, onRerun, onTitleChange }: ReportViewPr
               )}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <Badge variant={confVariant}>{(confidence * 100).toFixed(0)}% confidence</Badge>
-              <Badge variant="info">{verified}/{total} claims verified</Badge>
+              {hasContent
+                ? <Badge variant={confVariant}>{(confPct * 100).toFixed(0)}% confidence</Badge>
+                : <Badge variant="default">No relevant content</Badge>
+              }
+              {hasContent && <Badge variant="info">{verified}/{total} claims verified</Badge>}
               {report.changes_detected.length > 0 && (
                 <Badge variant="warning">{report.changes_detected.length} change{report.changes_detected.length !== 1 ? 's' : ''} detected</Badge>
               )}
@@ -228,7 +236,14 @@ export function ReportView({ run, report, onRerun, onTitleChange }: ReportViewPr
                       <div key={src.id} className="flex items-center gap-2">
                         {src.crawl_status === 'success'
                           ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                          : <AlertTriangle className="h-3.5 w-3.5 text-red-400 shrink-0" />}
+                          : (
+                            <span className="relative shrink-0 group/err">
+                              <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
+                              <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover/err:block w-max max-w-[220px] rounded bg-slate-800 px-2 py-1 text-xs text-white shadow-lg z-10 whitespace-normal">
+                                {src.error ?? 'Crawl failed'}
+                              </span>
+                            </span>
+                          )}
                         <a
                           href={src.url}
                           target="_blank"
@@ -262,8 +277,27 @@ export function ReportView({ run, report, onRerun, onTitleChange }: ReportViewPr
         </div>
       )}
 
+      {/* ── No relevant content notice ───────────────────────────── */}
+      {!hasContent && (
+        <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <SearchX className="mt-0.5 h-4 w-4 text-slate-500 shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-slate-700">No relevant content found</p>
+            <p className="mt-0.5 text-sm text-slate-500">
+              The source URLs did not contain information matching the specified competitors or topics.
+              Try different URLs or broaden your search terms.
+            </p>
+            {onRerun && (
+              <button onClick={() => setShowRerunModal(true)} className="btn-secondary mt-3 text-xs">
+                <RotateCcw className="h-3.5 w-3.5" /> Run again with different URLs
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Low confidence warning ───────────────────────────────── */}
-      {confidence < 0.5 && (
+      {hasContent && confPct < 0.5 && (
         <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
           <AlertTriangle className="mt-0.5 h-4 w-4 text-red-600 shrink-0" />
           <p className="text-sm text-red-700">

@@ -1,4 +1,4 @@
-import { CheckCircle2, AlertCircle, Loader2, Globe, Sparkles, ShieldCheck, Flag } from 'lucide-react'
+import { CheckCircle2, AlertCircle, Loader2, Globe, Sparkles, ShieldCheck, Flag, RefreshCw } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { ProgressEvent } from '../../types'
 
@@ -41,9 +41,10 @@ interface PipelineProgressProps {
   events: ProgressEvent[]
   isDone: boolean
   onViewReport: () => void
+  onRetry?: () => void
 }
 
-export function PipelineProgress({ events, isDone, onViewReport }: PipelineProgressProps) {
+export function PipelineProgress({ events, isDone, onViewReport, onRetry }: PipelineProgressProps) {
   const hasError = isDone && events.at(-1)?.event === 'error'
   const isComplete = isDone && !hasError
   const current = currentPipelineStage(events)
@@ -170,16 +171,16 @@ export function PipelineProgress({ events, isDone, onViewReport }: PipelineProgr
                       </ul>
                     </div>
                   )}
-
-                  {/* View Report CTA */}
-                  {stage.id === 'complete' && isComplete && (
-                    <div className="mt-4">
-                      <button onClick={onViewReport} className="btn-primary">
-                        View Report →
-                      </button>
-                    </div>
-                  )}
                 </div>
+
+                {/* View Report CTA — separated from stage messages */}
+                {stage.id === 'complete' && isComplete && (
+                  <div className="mt-5 border-t border-emerald-200 pt-4">
+                    <button onClick={onViewReport} className="btn-primary">
+                      View Report →
+                    </button>
+                  </div>
+                )}
               </div>
             )
           })}
@@ -194,6 +195,14 @@ export function PipelineProgress({ events, isDone, onViewReport }: PipelineProgr
               <p className="pl-6 text-sm text-red-600">
                 {events.at(-1)?.message ?? 'An unexpected error occurred.'}
               </p>
+              {onRetry && (
+                <div className="mt-3 pl-6">
+                  <button onClick={onRetry} className="btn-secondary text-sm">
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Retry from beginning
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

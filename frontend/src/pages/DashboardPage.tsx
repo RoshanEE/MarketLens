@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  PlusCircle, Star, ChevronDown, ChevronUp, RefreshCw,
+  PlusCircle, ChevronDown, ChevronUp, RefreshCw,
   BarChart3, CheckCircle2, Loader2, AlertCircle,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { researchApi } from '../services/api'
 import { RunsTable } from '../components/dashboard/RunsTable'
 import { Spinner } from '../components/ui/Spinner'
+import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import type { ResearchRunSummary } from '../types'
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
@@ -99,7 +100,7 @@ function CollapsibleSection({ title, badge, defaultOpen = true, action, children
   )
 }
 
-// ── Mini card (starred + recent panels) ───────────────────────────────────────
+// ── Mini card (recent panel) ───────────────────────────────────────────────────
 
 function RunMiniCard({ run }: { run: ResearchRunSummary }) {
   const tags = [...run.competitors, ...run.topics]
@@ -121,22 +122,11 @@ function RunMiniCard({ run }: { run: ResearchRunSummary }) {
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
 
-const STARRED_KEY = 'marketlens-starred'
-
-function loadStarred(): Set<string> {
-  try {
-    const raw = localStorage.getItem(STARRED_KEY)
-    return raw ? new Set(JSON.parse(raw)) : new Set()
-  } catch {
-    return new Set()
-  }
-}
-
 export function DashboardPage() {
   const [runs, setRuns] = useState<ResearchRunSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [starred, setStarred] = useState<Set<string>>(loadStarred)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [statusFilter, setStatusFilter] = useState('All')
 
@@ -150,30 +140,20 @@ export function DashboardPage() {
     finally { setRefreshing(false) }
   }
 
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
+  const handleDelete = (id: string, e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    if (!confirm('Delete this research run?')) return
+    setDeleteConfirmId(id)
+  }
+
+  const confirmDelete = async () => {
+    const id = deleteConfirmId
+    if (!id) return
+    setDeleteConfirmId(null)
     setDeletingId(id)
     await researchApi.deleteRun(id)
     setRuns(prev => prev.filter(r => r.id !== id))
-    setStarred(prev => {
-      const next = new Set(prev)
-      next.delete(id)
-      localStorage.setItem(STARRED_KEY, JSON.stringify([...next]))
-      return next
-    })
     setDeletingId(null)
-  }
-
-  const toggleStar = (id: string) => {
-    setStarred(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      localStorage.setItem(STARRED_KEY, JSON.stringify([...next]))
-      return next
-    })
   }
 
   const stats = useMemo(() => ({
@@ -184,7 +164,6 @@ export function DashboardPage() {
   }), [runs])
 
   const recentRuns = useMemo(() => runs.filter(r => r.status === 'complete').slice(0, 3), [runs])
-  const starredRuns = useMemo(() => runs.filter(r => starred.has(r.id)), [runs, starred])
 
   if (loading) {
     return (
@@ -241,15 +220,6 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* ── Starred panel ───────────────────────────────────────────── */}
-      {starredRuns.length > 0 && (
-        <CollapsibleSection title="Starred" badge={starredRuns.length}>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            {starredRuns.map(run => <RunMiniCard key={run.id} run={run} />)}
-          </div>
-        </CollapsibleSection>
-      )}
-
       {/* ── Recent completed ────────────────────────────────────────── */}
       {recentRuns.length > 0 && (
         <CollapsibleSection
@@ -276,8 +246,6 @@ export function DashboardPage() {
         </div>
         <RunsTable
           runs={runs}
-          starred={starred}
-          onStar={toggleStar}
           onDelete={handleDelete}
           deletingId={deletingId}
           statusFilter={statusFilter}
@@ -285,11 +253,15 @@ export function DashboardPage() {
         />
       </div>
 
-      {runs.length > 0 && starredRuns.length === 0 && (
-        <p className="text-center text-xs text-slate-400">
-          <Star className="inline h-3 w-3 mr-1" />
-          Star any run from the table to pin it to the top.
-        </p>
+      {deleteConfirmId && (
+        <ConfirmDialog
+          title="Delete research run?"
+          message="This will permanently remove the run and its report. This action cannot be undone."
+          confirmLabel="Delete"
+          destructive
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteConfirmId(null)}
+        />
       )}
     </div>
   )

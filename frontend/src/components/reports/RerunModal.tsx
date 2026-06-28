@@ -46,7 +46,7 @@ export function RerunModal({ run, submitting, onSubmit, onClose }: RerunModalPro
 
         <div className="px-6 py-5">
           <ResearchForm
-            onSubmit={(payload) => onSubmit({ ...payload, title: run.title ?? undefined })}
+            onSubmit={(payload) => onSubmit({ ...payload, title: run.title ?? undefined, source_run_id: run.id })}
             loading={submitting}
             hideTitle
             submitLabel="Run Again"

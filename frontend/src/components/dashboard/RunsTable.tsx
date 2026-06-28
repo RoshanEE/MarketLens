@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Trash2, Star, ChevronLeft, ChevronRight } from 'lucide-react'
-import { clsx } from 'clsx'
+import { Search, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Badge } from '../ui/Badge'
 import { Spinner } from '../ui/Spinner'
 import { CheckCircle2, AlertCircle, Loader2, Clock } from 'lucide-react'
@@ -27,15 +26,13 @@ const PAGE_SIZES = [10, 25, 50]
 
 interface RunsTableProps {
   runs: ResearchRunSummary[]
-  starred: Set<string>
-  onStar: (id: string) => void
   onDelete: (id: string, e: React.MouseEvent) => void
   deletingId: string | null
   statusFilter: string
   onStatusFilterChange: (v: string) => void
 }
 
-export function RunsTable({ runs, starred, onStar, onDelete, deletingId, statusFilter, onStatusFilterChange }: RunsTableProps) {
+export function RunsTable({ runs, onDelete, deletingId, statusFilter, onStatusFilterChange }: RunsTableProps) {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -102,6 +99,7 @@ export function RunsTable({ runs, starred, onStar, onDelete, deletingId, statusF
                 <tr className="border-b border-slate-200 bg-slate-50 text-left">
                   <th className="px-4 py-3 font-medium text-slate-500">Title</th>
                   <th className="px-4 py-3 font-medium text-slate-500">Status</th>
+                  <th className="px-4 py-3 font-medium text-slate-500 hidden lg:table-cell">Results</th>
                   <th className="px-4 py-3 font-medium text-slate-500 hidden sm:table-cell">URLs</th>
                   <th className="px-4 py-3 font-medium text-slate-500 hidden md:table-cell">Date</th>
                   <th className="px-4 py-3" />
@@ -110,7 +108,6 @@ export function RunsTable({ runs, starred, onStar, onDelete, deletingId, statusF
               <tbody className="divide-y divide-slate-100">
                 {paginated.map(run => {
                   const { label, variant, icon } = STATUS_CONFIG[run.status]
-                  const isStarred = starred.has(run.id)
                   const tags = [...run.competitors, ...run.topics]
                   return (
                     <tr
@@ -129,22 +126,36 @@ export function RunsTable({ runs, starred, onStar, onDelete, deletingId, statusF
                           <span className="flex items-center gap-1">{icon} {label}</span>
                         </Badge>
                       </td>
+                      <td className="px-4 py-3 hidden lg:table-cell">
+                        {run.status === 'complete' && run.overall_confidence !== null ? (() => {
+                          const pct = run.overall_confidence ?? 0
+                          const confColor = pct >= 0.75
+                            ? 'text-emerald-600'
+                            : pct >= 0.5
+                            ? 'text-amber-500'
+                            : 'text-red-500'
+                          return (
+                            <div className="space-y-0.5">
+                              <p className={`text-sm font-medium ${confColor}`}>
+                                {(pct * 100).toFixed(0)}% confidence
+                              </p>
+                              {run.verified_claims !== null && run.total_claims !== null && (
+                                <p className="text-xs text-slate-400">
+                                  {run.verified_claims}/{run.total_claims} claims verified
+                                </p>
+                              )}
+                            </div>
+                          )
+                        })() : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-slate-500 hidden sm:table-cell">{run.url_count}</td>
                       <td className="px-4 py-3 text-slate-400 whitespace-nowrap hidden md:table-cell">
                         {new Date(run.created_at).toLocaleDateString()}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-0.5 justify-end" onClick={e => e.stopPropagation()}>
-                          <button
-                            onClick={() => onStar(run.id)}
-                            className={clsx(
-                              'p-1.5 rounded-md transition-colors',
-                              isStarred ? 'text-amber-400 hover:text-amber-500' : 'text-slate-300 hover:text-amber-400',
-                            )}
-                            title={isStarred ? 'Unstar' : 'Star'}
-                          >
-                            <Star className={clsx('h-4 w-4', isStarred && 'fill-current')} />
-                          </button>
+                        <div className="flex items-center justify-end" onClick={e => e.stopPropagation()}>
                           <button
                             onClick={e => onDelete(run.id, e)}
                             disabled={deletingId === run.id}
