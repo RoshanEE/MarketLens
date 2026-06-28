@@ -64,8 +64,8 @@ class TestMakeEvent:
 class TestDetectChanges:
     def test_new_url_produces_new_url_change(self):
         changes = _detect_changes(
-            current_hashes={"https://example.com": "abc123"},
-            previous_hashes={},
+            current_hashes={"https://example.com": "abc123", "https://existing.com": "xyz"},
+            previous_hashes={"https://existing.com": "xyz"},
         )
         assert changes == [{"url": "https://example.com", "type": "new_url"}]
 
@@ -83,10 +83,11 @@ class TestDetectChanges:
         )
         assert changes == []
 
-    def test_empty_current_hashes_produces_no_changes(self):
+    def test_no_previous_hashes_produces_no_changes(self):
+        """First run (no source_run_id) returns empty previous_hashes — no comparison possible."""
         changes = _detect_changes(
-            current_hashes={},
-            previous_hashes={"https://example.com": "abc123"},
+            current_hashes={"https://example.com": "abc123"},
+            previous_hashes={},
         )
         assert changes == []
 
@@ -112,7 +113,9 @@ class TestDetectChanges:
         assert _detect_changes({}, {}) == []
 
     def test_multiple_new_urls_all_reported(self):
-        urls = {f"https://url{i}.com": f"hash{i}" for i in range(5)}
-        changes = _detect_changes(current_hashes=urls, previous_hashes={})
-        assert len(changes) == 5
-        assert all(c["type"] == "new_url" for c in changes)
+        new_urls = {f"https://url{i}.com": f"hash{i}" for i in range(5)}
+        current = {**new_urls, "https://existing.com": "existinghash"}
+        changes = _detect_changes(current_hashes=current, previous_hashes={"https://existing.com": "existinghash"})
+        new_url_changes = [c for c in changes if c["type"] == "new_url"]
+        assert len(new_url_changes) == 5
+        assert all(c["type"] == "new_url" for c in new_url_changes)
