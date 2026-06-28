@@ -133,7 +133,7 @@ After extraction, every single claim in the report is independently verified:
 2. The judge answers: `supported (bool)`, `confidence (0.0–1.0)`, `reasoning (one sentence)`
 3. Claims with `confidence ≥ 0.6` are marked `verified = true`
 4. All verifications run **concurrently** via `asyncio.gather` to keep latency low
-5. The overall confidence score is the mean of all individual confidences
+5. The overall confidence score is the arithmetic mean of every individual claim's confidence score — across theme insights, competitor activities, and key insights combined. A report with 15 claims each scored between 0.0 and 1.0 produces an overall score of `sum(all_scores) / 15`. This means a single low-confidence claim brings the overall score down proportionally, rather than being hidden by high-confidence neighbours
 
 GPT-4.1-mini is appropriate for the judge because:
 - Each verification is an independent, focused binary question against a fixed context — no multi-source synthesis needed
