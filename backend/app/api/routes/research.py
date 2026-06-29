@@ -75,8 +75,6 @@ async def create_run(
 async def list_runs(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    limit: int = 20,
-    offset: int = 0,
 ):
     """List all research runs for the authenticated user, newest first."""
     user_id = UUID(current_user["sub"])
@@ -104,8 +102,6 @@ async def list_runs(
         .outerjoin(Report, Report.run_id == ResearchRun.id)
         .where(ResearchRun.user_id == user_id)
         .order_by(ResearchRun.created_at.desc())
-        .offset(offset)
-        .limit(limit)
     )
     rows = result.all()
 
